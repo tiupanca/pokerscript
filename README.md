@@ -234,7 +234,7 @@ play bankrollManager(stack bankroll, chip buyIn) -> bool {
 - [x] IDE interativo básico
 - [x] Sintaxe core da linguagem
 - [x] Operadores especiais de poker
-- [ ] Implementar interpretador funcional
+- [x] Implementar interpretador funcional
 - [ ] Adicionar debugger visual
 - [ ] Criar biblioteca padrão completa
 - [ ] Suporte a multiplayer/torneios
