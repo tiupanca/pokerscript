@@ -35,7 +35,7 @@
 
 Experimente o **PokerScript IDE** interativo online:
 
-👉 **[pokerscript-ide.vercel.app](#)** *(link da sua demo)*
+👉 **[pokerscript-ide.vercel.app](#)**
 
 ![PokerScript IDE Screenshot](screenshot.png)
 
@@ -51,7 +51,7 @@ Experimente o **PokerScript IDE** interativo online:
 ### Clonando o Repositório
 
 ```bash
-git clone https://github.com/seu-usuario/pokerscript.git
+git clone https://github.com/tiupanca/pokerscript.git
 cd pokerscript
 ```
 
@@ -272,9 +272,9 @@ Este projeto está sob a licença MIT. Veja o arquivo [LICENSE](LICENSE) para ma
 
 **Seu Nome**
 
-- GitHub: [@seu-usuario](https://github.com/tiupanca)
-- LinkedIn: [Seu Nome](https://linkedin.com/in/alsod)
-- Website: [seusite.com](https://gtabrasil.com)
+- GitHub: [@tiupanca](https://github.com/tiupanca)
+- LinkedIn: [André Sarmento](https://linkedin.com/in/alsod)
+- Website: [GTABRASIL](https://gtabrasil.com)
 ---
 
 ## 🙏 Agradecimentos
