@@ -235,7 +235,7 @@ play bankrollManager(stack bankroll, chip buyIn) -> bool {
 - [x] Sintaxe core da linguagem
 - [x] Operadores especiais de poker
 - [x] Implementar interpretador funcional
-- [ ] Adicionar debugger visual
+- [x] Adicionar debugger visual
 - [ ] Criar biblioteca padrão completa
 - [ ] Suporte a multiplayer/torneios
 - [ ] Extensão VSCode com syntax highlighting

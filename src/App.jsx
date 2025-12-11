@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
-import { Play, BookOpen, Code, Zap, AlertCircle, CheckCircle } from 'lucide-react';
+import { Play, BookOpen, Code, Zap, AlertCircle, CheckCircle, Bug, Pause, SkipForward, RotateCcw, Circle } from 'lucide-react';
 
-// Interpretador PokerScript
+// Interpretador PokerScript com suporte a debugging
 class PokerScriptInterpreter {
   constructor() {
     this.reset();
@@ -12,6 +12,9 @@ class PokerScriptInterpreter {
     this.output = [];
     this.deck = this.createDeck();
     this.error = null;
+    this.executionSteps = [];
+    this.currentStep = 0;
+    this.breakpoints = new Set();
   }
 
   createDeck() {
@@ -97,31 +100,58 @@ class PokerScriptInterpreter {
     return { name: 'Carta Alta', value: 0 };
   }
 
-  execute(code) {
+  captureState() {
+    return {
+      variables: JSON.parse(JSON.stringify(this.variables)),
+      output: [...this.output]
+    };
+  }
+
+  execute(code, debugMode = false) {
     this.reset();
+    this.executionSteps = [];
     
     try {
-      const lines = code.split('\n').map(l => l.trim()).filter(l => l && !l.startsWith('//'));
+      const lines = code.split('\n').map((l, idx) => ({ line: l.trim(), lineNumber: idx + 1 }))
+        .filter(l => l.line && !l.line.startsWith('//'));
       
-      for (let line of lines) {
-        this.executeLine(line);
+      if (debugMode) {
+        for (let i = 0; i < lines.length; i++) {
+          const { line, lineNumber } = lines[i];
+          this.executionSteps.push({
+            lineNumber,
+            line,
+            stateBefore: this.captureState(),
+            output: ''
+          });
+          
+          const outputBefore = this.output.length;
+          this.executeLine(line);
+          const outputAfter = this.output.slice(outputBefore).join('\n');
+          
+          this.executionSteps[i].output = outputAfter;
+          this.executionSteps[i].stateAfter = this.captureState();
+        }
+        
+        return { success: true, output: this.output.join('\n'), steps: this.executionSteps };
+      } else {
+        for (let { line } of lines) {
+          this.executeLine(line);
+        }
+        
+        return { success: true, output: this.output.join('\n') };
       }
-      
-      return { success: true, output: this.output.join('\n') };
     } catch (error) {
       return { success: false, output: this.output.join('\n'), error: error.message };
     }
   }
 
   executeLine(line) {
-    // deck declaration and shuffle
     if (line.includes('deck') && line.includes('shuffle')) {
       const varName = line.split('deck')[1].split('=')[0].trim();
       this.variables[varName] = this.shuffle([...this.deck]);
       this.log(`✓ Deck '${varName}' criado e embaralhado (52 cartas)`);
     }
-    
-    // hand declaration
     else if (line.startsWith('hand')) {
       const hands = line.replace('hand', '').replace(';', '').split(',').map(h => h.trim());
       hands.forEach(h => {
@@ -129,8 +159,6 @@ class PokerScriptInterpreter {
         this.log(`✓ Mão '${h}' criada`);
       });
     }
-    
-    // deal cards
     else if (line.includes('deal') && line.includes('from') && line.includes('to')) {
       const match = line.match(/deal (\d+) from (\w+) to (\w+)/);
       if (match) {
@@ -138,11 +166,9 @@ class PokerScriptInterpreter {
         const cards = this.dealCards(this.variables[deckName], parseInt(count));
         this.variables[handName] = cards;
         const cardStr = cards.map(c => `${c.rank}${c.suit}`).join(', ');
-        this.log(`✓ ${count} carta(s) distribuída(s) para ${handName}: [${cardStr}]`);
+        this.log(`✓ ${count} carta(s) para ${handName}: [${cardStr}]`);
       }
     }
-    
-    // board/flop
     else if (line.includes('board') && line.includes('flop')) {
       const varName = line.split('board')[1].split('=')[0].trim();
       const deckName = line.match(/flop\((\w+)\)/)[1];
@@ -151,8 +177,6 @@ class PokerScriptInterpreter {
       const cardStr = cards.map(c => `${c.rank}${c.suit}`).join(', ');
       this.log(`✓ Flop: [${cardStr}]`);
     }
-    
-    // turn
     else if (line.includes('turn')) {
       const match = line.match(/turn\((\w+),\s*(\w+)\)/);
       if (match) {
@@ -162,8 +186,6 @@ class PokerScriptInterpreter {
         this.log(`✓ Turn: [${card.rank}${card.suit}]`);
       }
     }
-    
-    // river
     else if (line.includes('river')) {
       const match = line.match(/river\((\w+),\s*(\w+)\)/);
       if (match) {
@@ -173,17 +195,13 @@ class PokerScriptInterpreter {
         this.log(`✓ River: [${card.rank}${card.suit}]`);
       }
     }
-    
-    // chip declaration
     else if (line.includes('chip') && line.includes('=')) {
       const [varPart, valuePart] = line.split('=');
       const varName = varPart.replace('chip', '').trim();
       const value = parseInt(valuePart.replace(';', '').trim());
       this.variables[varName] = value;
-      this.log(`✓ Variável '${varName}' = ${value} fichas`);
+      this.log(`✓ '${varName}' = ${value} fichas`);
     }
-    
-    // if statements (simplified)
     else if (line.includes('if') && line.includes('has')) {
       const match = line.match(/if\s*\((\w+)\s+has\s+(\w+)\)/);
       if (match) {
@@ -199,8 +217,6 @@ class PokerScriptInterpreter {
         }
       }
     }
-    
-    // bet
     else if (line.includes('bet') && line.includes('from')) {
       const match = line.match(/bet (\d+) from (\w+)/);
       if (match) {
@@ -208,19 +224,13 @@ class PokerScriptInterpreter {
         this.log(`✓ ${player} aposta: ${amount} fichas`);
       }
     }
-    
-    // call
     else if (line.includes('call from')) {
       const player = line.match(/call from (\w+)/)[1];
-      this.log(`✓ ${player} paga a aposta`);
+      this.log(`✓ ${player} paga`);
     }
-    
-    // showdown
     else if (line.includes('showdown')) {
       this.log(`\n🏆 Showdown:`);
     }
-    
-    // compare
     else if (line.includes('compare') && line.includes('with')) {
       const match = line.match(/compare (\w+),\s*(\w+) with (\w+)/);
       if (match) {
@@ -236,11 +246,11 @@ class PokerScriptInterpreter {
         this.log(`${p2}: ${strength2.name}`);
         
         if (strength1.value > strength2.value) {
-          this.log(`\n🎊 ${p1} vence com ${strength1.name}!`);
+          this.log(`\n🎊 ${p1} vence!`);
         } else if (strength2.value > strength1.value) {
-          this.log(`\n🎊 ${p2} vence com ${strength2.name}!`);
+          this.log(`\n🎊 ${p2} vence!`);
         } else {
-          this.log(`\n🤝 Empate com ${strength1.name}!`);
+          this.log(`\n🤝 Empate!`);
         }
       }
     }
@@ -248,7 +258,7 @@ class PokerScriptInterpreter {
 }
 
 const PokerScriptIDE = () => {
-  const [activeTab, setActiveTab] = useState('overview');
+  const [activeTab, setActiveTab] = useState('playground');
   const [code, setCode] = useState(`deck myDeck = shuffle(standard52);
 hand player1, player2;
 
@@ -271,26 +281,103 @@ showdown {
   const [output, setOutput] = useState('');
   const [isRunning, setIsRunning] = useState(false);
   const [hasError, setHasError] = useState(false);
+  
+  const [debugMode, setDebugMode] = useState(false);
+  const [debugSteps, setDebugSteps] = useState([]);
+  const [currentDebugStep, setCurrentDebugStep] = useState(-1);
+  const [isPaused, setIsPaused] = useState(false);
 
   const interpreter = new PokerScriptInterpreter();
 
-  const executeCode = () => {
+  const executeCode = (debug = false) => {
     setIsRunning(true);
     setHasError(false);
+    setDebugMode(debug);
     
     setTimeout(() => {
-      const result = interpreter.execute(code);
+      const result = interpreter.execute(code, debug);
       
       if (result.success) {
-        setOutput(`🎴 Executando PokerScript...\n\n${result.output}`);
+        if (debug) {
+          setDebugSteps(result.steps);
+          setCurrentDebugStep(0);
+          setIsPaused(true);
+          setOutput(result.steps[0]?.output || '');
+        } else {
+          setOutput(`🎴 Executando PokerScript...\n\n${result.output}`);
+        }
         setHasError(false);
       } else {
-        setOutput(`❌ Erro de execução:\n\n${result.error}\n\nOutput até o erro:\n${result.output}`);
+        setOutput(`❌ Erro:\n\n${result.error}\n\n${result.output}`);
         setHasError(true);
       }
       
       setIsRunning(false);
     }, 100);
+  };
+
+  const stepForward = () => {
+    if (currentDebugStep < debugSteps.length - 1) {
+      const nextStep = currentDebugStep + 1;
+      setCurrentDebugStep(nextStep);
+      
+      const accumulatedOutput = debugSteps
+        .slice(0, nextStep + 1)
+        .map(s => s.output)
+        .filter(Boolean)
+        .join('\n');
+      setOutput(accumulatedOutput);
+    }
+  };
+
+  const continueExecution = () => {
+    setIsPaused(false);
+    const finalOutput = debugSteps.map(s => s.output).filter(Boolean).join('\n');
+    setOutput(`🎴 Executando...\n\n${finalOutput}`);
+    setCurrentDebugStep(debugSteps.length - 1);
+  };
+
+  const resetDebug = () => {
+    setDebugMode(false);
+    setDebugSteps([]);
+    setCurrentDebugStep(-1);
+    setIsPaused(false);
+    setOutput('');
+  };
+
+  const renderVariablesPanel = () => {
+    if (!debugMode || currentDebugStep < 0) return null;
+    
+    const currentState = debugSteps[currentDebugStep]?.stateAfter || {};
+    const vars = currentState.variables || {};
+    
+    return (
+      <div className="bg-green-900/30 border border-yellow-600/20 rounded p-4 mt-4">
+        <h3 className="text-yellow-400 font-bold mb-2 flex items-center gap-2">
+          <Bug size={18} />
+          Estado das Variáveis
+        </h3>
+        <div className="space-y-2 text-sm font-mono">
+          {Object.keys(vars).length === 0 ? (
+            <p className="text-green-300">Nenhuma variável ainda</p>
+          ) : (
+            Object.entries(vars).map(([key, value]) => (
+              <div key={key} className="bg-black/30 p-2 rounded">
+                <span className="text-yellow-300">{key}</span>
+                <span className="text-green-300"> = </span>
+                <span className="text-blue-300">
+                  {Array.isArray(value) 
+                    ? value.length > 0 && value[0].rank 
+                      ? `[${value.map(c => `${c.rank}${c.suit}`).join(', ')}]`
+                      : `Array(${value.length})`
+                    : JSON.stringify(value)}
+                </span>
+              </div>
+            ))
+          )}
+        </div>
+      </div>
+    );
   };
 
   return (
@@ -300,16 +387,14 @@ showdown {
           <h1 className="text-5xl font-bold text-yellow-400 mb-2 drop-shadow-lg">
             ♠️ PokerScript ♥️
           </h1>
-          <p className="text-green-100 text-lg">A linguagem de programação inspirada em poker</p>
-          <p className="text-green-300 text-sm mt-2">✨ Agora com interpretador funcional!</p>
+          <p className="text-green-100 text-lg">Linguagem de programação inspirada em poker</p>
+          <p className="text-green-300 text-sm mt-2">✨ Com interpretador e debugger visual!</p>
         </header>
 
         <div className="bg-green-950/50 backdrop-blur rounded-lg border-2 border-yellow-600/30 shadow-2xl">
           <div className="flex border-b border-yellow-600/30">
             {[
               { id: 'overview', label: 'Visão Geral', icon: BookOpen },
-              { id: 'syntax', label: 'Sintaxe', icon: Code },
-              { id: 'examples', label: 'Exemplos', icon: Zap },
               { id: 'playground', label: 'Playground', icon: Play }
             ].map(tab => (
               <button
@@ -331,214 +416,20 @@ showdown {
             {activeTab === 'overview' && (
               <div className="text-green-100 space-y-6">
                 <section>
-                  <h2 className="text-2xl font-bold text-yellow-400 mb-3">🎯 Conceito</h2>
+                  <h2 className="text-2xl font-bold text-yellow-400 mb-3">🎯 Sobre</h2>
                   <p className="leading-relaxed">
-                    PokerScript é uma linguagem imperativa e fortemente tipada onde toda a estrutura
-                    gira em torno dos conceitos de poker: decks, mãos, apostas, e estratégia.
+                    PokerScript é uma linguagem imperativa onde toda estrutura gira em torno de poker: decks, mãos, apostas e estratégia.
                   </p>
                 </section>
 
                 <section>
-                  <h2 className="text-2xl font-bold text-yellow-400 mb-3">🃏 Tipos Primitivos</h2>
-                  <div className="grid grid-cols-2 gap-4">
-                    <div className="bg-green-900/50 p-4 rounded border border-yellow-600/20">
-                      <code className="text-yellow-300 font-bold">chip</code>
-                      <p className="text-sm mt-1">Números inteiros (fichas)</p>
-                    </div>
-                    <div className="bg-green-900/50 p-4 rounded border border-yellow-600/20">
-                      <code className="text-yellow-300 font-bold">odds</code>
-                      <p className="text-sm mt-1">Números decimais (probabilidades)</p>
-                    </div>
-                    <div className="bg-green-900/50 p-4 rounded border border-yellow-600/20">
-                      <code className="text-yellow-300 font-bold">card</code>
-                      <p className="text-sm mt-1">Uma carta individual</p>
-                    </div>
-                    <div className="bg-green-900/50 p-4 rounded border border-yellow-600/20">
-                      <code className="text-yellow-300 font-bold">bool</code>
-                      <p className="text-sm mt-1">Verdadeiro/Falso (allin/fold)</p>
-                    </div>
-                  </div>
-                </section>
-
-                <section>
-                  <h2 className="text-2xl font-bold text-yellow-400 mb-3">🎴 Tipos Compostos</h2>
-                  <div className="space-y-2 bg-green-900/50 p-4 rounded border border-yellow-600/20 font-mono text-sm">
-                    <div><code className="text-yellow-300">deck</code> - Coleção de 52 cartas</div>
-                    <div><code className="text-yellow-300">hand</code> - Mão de um jogador (2 cartas no Texas Hold'em)</div>
-                    <div><code className="text-yellow-300">board</code> - Cartas comunitárias (flop/turn/river)</div>
-                    <div><code className="text-yellow-300">stack</code> - Pilha de fichas de um jogador</div>
-                    <div><code className="text-yellow-300">pot</code> - Pote central de apostas</div>
-                  </div>
-                </section>
-
-                <section>
-                  <h2 className="text-2xl font-bold text-yellow-400 mb-3">♠️ Filosofia</h2>
-                  <p className="leading-relaxed">
-                    Programar em PokerScript é como jogar poker: você gerencia recursos (fichas),
-                    toma decisões baseadas em probabilidades, e lida com incerteza. Loops são "rounds",
-                    condicionais são "reads", e funções são "plays".
-                  </p>
-                </section>
-              </div>
-            )}
-
-            {activeTab === 'syntax' && (
-              <div className="text-green-100 space-y-6">
-                <section>
-                  <h2 className="text-2xl font-bold text-yellow-400 mb-3">📝 Declarações</h2>
-                  <pre className="bg-black/40 p-4 rounded border border-yellow-600/20 overflow-x-auto">
-{`chip myStack = 1000;
-deck mainDeck = shuffle(standard52);
-hand hero, villain;
-board flop = empty;`}
-                  </pre>
-                </section>
-
-                <section>
-                  <h2 className="text-2xl font-bold text-yellow-400 mb-3">🎲 Controle de Fluxo</h2>
-                  <pre className="bg-black/40 p-4 rounded border border-yellow-600/20 overflow-x-auto">
-{`// Condicional (read)
-if (hero has flush) {
-  bet 500 from hero;
-} else if (hero has pair) {
-  check;
-} else {
-  fold hero;
-}
-
-// Loop (round)
-round 10 times {
-  deal 2 from deck to player;
-  if (player has monster) break;
-}
-
-// Loop condicional
-while (pot < 1000) {
-  bet 50 from player1;
-  call from player2;
-}`}
-                  </pre>
-                </section>
-
-                <section>
-                  <h2 className="text-2xl font-bold text-yellow-400 mb-3">🎯 Funções (Plays)</h2>
-                  <pre className="bg-black/40 p-4 rounded border border-yellow-600/20 overflow-x-auto">
-{`play calculateOuts(hand h, board b) -> chip {
-  chip outs = 0;
-  if (h needs one for flush) outs += 9;
-  if (h needs one for straight) outs += 8;
-  return outs;
-}
-
-// Função de alto nível
-play bluff(hand h, chip amount) -> bool {
-  if (random() > 0.7) {
-    raise amount;
-    return allin;
-  }
-  return fold;
-}`}
-                  </pre>
-                </section>
-
-                <section>
-                  <h2 className="text-2xl font-bold text-yellow-400 mb-3">🔍 Operadores Especiais</h2>
-                  <div className="grid grid-cols-2 gap-4 text-sm">
-                    <div className="bg-black/40 p-3 rounded border border-yellow-600/20">
-                      <code className="text-yellow-300">has</code> - Verifica combinação
-                      <pre className="text-xs mt-1">if (hand has straight)</pre>
-                    </div>
-                    <div className="bg-black/40 p-3 rounded border border-yellow-600/20">
-                      <code className="text-yellow-300">needs</code> - Verifica outs
-                      <pre className="text-xs mt-1">if (hand needs one for flush)</pre>
-                    </div>
-                    <div className="bg-black/40 p-3 rounded border border-yellow-600/20">
-                      <code className="text-yellow-300">vs</code> - Compara mãos
-                      <pre className="text-xs mt-1">if (hand1 vs hand2 wins)</pre>
-                    </div>
-                    <div className="bg-black/40 p-3 rounded border border-yellow-600/20">
-                      <code className="text-yellow-300">@</code> - Acessa carta
-                      <pre className="text-xs mt-1">card top = deck@0</pre>
-                    </div>
-                  </div>
-                </section>
-              </div>
-            )}
-
-            {activeTab === 'examples' && (
-              <div className="space-y-6">
-                <section>
-                  <h3 className="text-xl font-bold text-yellow-400 mb-3">🎰 Exemplo Básico (Clique para Testar!)</h3>
-                  <button
-                    onClick={() => {
-                      setCode(`deck myDeck = shuffle(standard52);
-hand player1, player2;
-
-deal 2 from myDeck to player1;
-deal 2 from myDeck to player2;
-
-board community = flop(myDeck);
-turn(myDeck, community);
-river(myDeck, community);
-
-showdown {
-  compare player1, player2 with community;
-}`);
-                      setActiveTab('playground');
-                    }}
-                    className="text-sm bg-yellow-600 hover:bg-yellow-500 text-white px-4 py-2 rounded transition-all"
-                  >
-                    Carregar no Playground
-                  </button>
-                </section>
-
-                <section>
-                  <h3 className="text-xl font-bold text-yellow-400 mb-3">🤖 Sistema de Apostas</h3>
-                  <pre className="bg-black/40 p-4 rounded border border-yellow-600/20 overflow-x-auto text-green-100 text-sm">
-{`deck myDeck = shuffle(standard52);
-hand hero, villain;
-chip pot = 0;
-
-deal 2 from myDeck to hero;
-deal 2 from myDeck to villain;
-
-if (hero has pair) {
-  bet 100 from hero;
-  call from villain;
-}
-
-board flop = flop(myDeck);
-
-if (hero has flush) {
-  bet 200 from hero;
-}`}
-                  </pre>
-                </section>
-
-                <section>
-                  <h3 className="text-xl font-bold text-yellow-400 mb-3">🎯 Jogo Completo</h3>
-                  <pre className="bg-black/40 p-4 rounded border border-yellow-600/20 overflow-x-auto text-green-100 text-sm">
-{`chip stack1 = 1000;
-chip stack2 = 1000;
-chip pot = 0;
-
-deck gameDeck = shuffle(standard52);
-hand player1, player2;
-
-deal 2 from gameDeck to player1;
-deal 2 from gameDeck to player2;
-
-bet 50 from player1;
-call from player2;
-
-board table = flop(gameDeck);
-turn(gameDeck, table);
-river(gameDeck, table);
-
-showdown {
-  compare player1, player2 with table;
-}`}
-                  </pre>
+                  <h2 className="text-2xl font-bold text-yellow-400 mb-3">🐛 Debugger Visual</h2>
+                  <ul className="list-disc list-inside space-y-1">
+                    <li>Execução passo a passo</li>
+                    <li>Visualização de variáveis em tempo real</li>
+                    <li>Destaque da linha atual</li>
+                    <li>Output progressivo</li>
+                  </ul>
                 </section>
               </div>
             )}
@@ -548,39 +439,88 @@ showdown {
                 <div className="flex items-center gap-2 bg-blue-900/30 border border-blue-500/30 rounded p-3">
                   <AlertCircle className="text-blue-400" size={20} />
                   <span className="text-blue-200 text-sm">
-                    <strong>Interpretador Funcional:</strong> Execute código PokerScript real! Simula distribuição de cartas, detecta combinações e determina vencedores.
+                    <strong>Interpretador Funcional:</strong> Execute código PokerScript real com debugger visual!
                   </span>
                 </div>
                 
                 <div>
                   <label className="block text-yellow-400 font-bold mb-2">Editor PokerScript</label>
-                  <textarea
-                    value={code}
-                    onChange={(e) => setCode(e.target.value)}
-                    className="w-full h-80 bg-black/60 text-green-100 p-4 rounded border border-yellow-600/30 font-mono text-sm focus:outline-none focus:border-yellow-400"
-                    spellCheck={false}
-                  />
+                  <div className="relative">
+                    <div className="absolute left-0 top-0 bottom-0 w-12 bg-black/40 flex flex-col text-green-500 text-xs font-mono pt-4 text-right pr-2">
+                      {code.split('\n').map((_, i) => (
+                        <div key={i} className={`leading-6 ${debugMode && currentDebugStep >= 0 && debugSteps[currentDebugStep]?.lineNumber === i + 1 ? 'bg-yellow-500/30 text-yellow-300 font-bold' : ''}`}>
+                          {i + 1}
+                        </div>
+                      ))}
+                    </div>
+                    <textarea
+                      value={code}
+                      onChange={(e) => setCode(e.target.value)}
+                      className="w-full h-80 bg-black/60 text-green-100 p-4 pl-16 rounded border border-yellow-600/30 font-mono text-sm focus:outline-none focus:border-yellow-400 leading-6"
+                      spellCheck={false}
+                    />
+                  </div>
                 </div>
                 
-                <button
-                  onClick={executeCode}
-                  disabled={isRunning}
-                  className={`${
-                    isRunning ? 'bg-gray-600' : 'bg-yellow-600 hover:bg-yellow-500'
-                  } text-white font-bold py-3 px-6 rounded flex items-center gap-2 transition-all`}
-                >
-                  {isRunning ? (
+                <div className="flex gap-2 flex-wrap">
+                  <button
+                    onClick={() => executeCode(false)}
+                    disabled={isRunning || debugMode}
+                    className="bg-yellow-600 hover:bg-yellow-500 disabled:bg-gray-600 text-white font-bold py-3 px-6 rounded flex items-center gap-2 transition-all"
+                  >
+                    <Play size={20} />
+                    Executar
+                  </button>
+                  
+                  <button
+                    onClick={() => executeCode(true)}
+                    disabled={isRunning || debugMode}
+                    className="bg-purple-600 hover:bg-purple-500 disabled:bg-gray-600 text-white font-bold py-3 px-6 rounded flex items-center gap-2 transition-all"
+                  >
+                    <Bug size={20} />
+                    Debug Mode
+                  </button>
+                  
+                  {debugMode && isPaused && (
                     <>
-                      <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-white"></div>
-                      Executando...
-                    </>
-                  ) : (
-                    <>
-                      <Play size={20} />
-                      Executar PokerScript
+                      <button
+                        onClick={stepForward}
+                        disabled={currentDebugStep >= debugSteps.length - 1}
+                        className="bg-blue-600 hover:bg-blue-500 disabled:bg-gray-600 text-white font-bold py-3 px-6 rounded flex items-center gap-2"
+                      >
+                        <SkipForward size={20} />
+                        Step
+                      </button>
+                      
+                      <button
+                        onClick={continueExecution}
+                        className="bg-green-600 hover:bg-green-500 text-white font-bold py-3 px-6 rounded flex items-center gap-2"
+                      >
+                        <Play size={20} />
+                        Continue
+                      </button>
                     </>
                   )}
-                </button>
+                  
+                  {debugMode && (
+                    <button
+                      onClick={resetDebug}
+                      className="bg-red-600 hover:bg-red-500 text-white font-bold py-3 px-6 rounded flex items-center gap-2"
+                    >
+                      <RotateCcw size={20} />
+                      Reset
+                    </button>
+                  )}
+                </div>
+                
+                {debugMode && (
+                  <div className="bg-green-900/30 border border-yellow-600/20 rounded p-3 flex items-center gap-2">
+                    <Pause className="text-yellow-400" size={18} />
+                    <span className="text-yellow-300 text-sm font-bold">
+                      Modo Debug Ativo - Linha {debugSteps[currentDebugStep]?.lineNumber || 0} de {debugSteps.length}
+                    </span>
+                  </div>
+                )}
                 
                 {output && (
                   <div>
@@ -589,13 +529,13 @@ showdown {
                       {!hasError && <CheckCircle className="text-green-400" size={20} />}
                       {hasError && <AlertCircle className="text-red-400" size={20} />}
                     </div>
-                    <pre className={`${
-                      hasError ? 'bg-red-950/60 border-red-500/30' : 'bg-black/60 border-yellow-600/30'
-                    } text-green-100 p-4 rounded border whitespace-pre-wrap font-mono text-sm`}>
+                    <pre className={`${hasError ? 'bg-red-950/60 border-red-500/30' : 'bg-black/60 border-yellow-600/30'} text-green-100 p-4 rounded border whitespace-pre-wrap font-mono text-sm`}>
                       {output}
                     </pre>
                   </div>
                 )}
+                
+                {renderVariablesPanel()}
               </div>
             )}
           </div>
@@ -603,7 +543,6 @@ showdown {
 
         <footer className="mt-8 text-center text-green-300 text-sm">
           <p>♣️ PokerScript v2.0 - "All in on programming" ♦️</p>
-          <p className="text-green-400 mt-1">✨ Powered by functional interpreter</p>
         </footer>
       </div>
     </div>
